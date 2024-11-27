@@ -1,7 +1,9 @@
 streamlit
-pandas
 moviepy 
-google-generativeai 
-SpeechRecognition 
-numpy
-ffmpeg
+speechrecognition 
+pillow
+numpy 
+pydub 
+google-generativeai
+
+
