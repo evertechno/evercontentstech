@@ -1,2 +1,6 @@
 streamlit
 pandas
+moviepy 
+google-generativeai 
+SpeechRecognition 
+numpy
