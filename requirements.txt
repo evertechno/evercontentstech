@@ -5,5 +5,5 @@ pillow
 numpy 
 pydub 
 google-generativeai
-
+moviepy.editor
 
