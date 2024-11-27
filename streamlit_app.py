@@ -34,29 +34,6 @@ if video_file is not None:
         ffmpeg_tools.ffmpeg_extract_subclip(temp_video_path, start_time, end_time, targetname="trimmed_video.mp4")
         st.video("trimmed_video.mp4")
 
-    # **Merge Videos**
-    st.subheader("Merge Videos")
-    second_video_file = st.file_uploader("Upload a second video to merge", type=["mp4", "avi", "mov"])
-    if second_video_file is not None:
-        # Save second video temporarily
-        temp_second_video_path = tempfile.mktemp(suffix=".mp4")
-        with open(temp_second_video_path, "wb") as f:
-            f.write(second_video_file.read())
-        
-        if st.button("Merge Videos"):
-            merged_video_path = "merged_video.mp4"
-            ffmpeg_tools.ffmpeg_concat_videos([temp_video_path, temp_second_video_path], merged_video_path)
-            st.video(merged_video_path)
-
-    # **Extract Audio from Video**
-    st.subheader("Extract Audio from Video")
-    if st.button("Extract Audio"):
-        audio_clip = video_clip.audio
-        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        audio_clip.write_audiofile(temp_audio.name)
-        st.audio(temp_audio.name)
-        st.write(f"Audio saved as {temp_audio.name}")
-
     # **Generate Transcription**
     def extract_audio_and_transcribe(video_file):
         video_clip = VideoFileClip(video_file)
@@ -91,23 +68,21 @@ if video_file is not None:
         else:
             st.warning("Please upload a video to generate transcription.")
 
-    # **Add Background Music**
-    st.subheader("Add Background Music to Video")
-    background_music = st.file_uploader("Upload Background Music (MP3)", type=["mp3"])
-    if background_music is not None:
-        audio_clip = AudioFileClip(background_music)
-        if st.button("Add Background Music"):
-            final_video_with_music = video_clip.set_audio(audio_clip)
-            final_video_with_music.write_videofile("video_with_music.mp4", codec="libx264")
-            st.video("video_with_music.mp4")
-
     # **AI Summarization**
     st.subheader("AI Generated Summary (using Google Generative AI)")
     prompt = st.text_input("Enter your prompt:", "Summarize the video content.")
+    
     if st.button("Generate AI Summary"):
         try:
-            transcript = extract_audio_and_transcribe(video_file)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            # Save the uploaded video file to a temporary location to handle it as a proper file
+            temp_video_path = tempfile.mktemp(suffix=".mp4")
+            with open(temp_video_path, "wb") as f:
+                f.write(video_file.read())
+
+            # Extract transcript from video
+            transcript = extract_audio_and_transcribe(temp_video_path)
+            # Assuming 'genai' is a valid AI model, use it to summarize the transcript
+            model = genai.GenerativeModel('gemini-1.5-flash')  # Replace with your actual model
             summary_response = model.generate_content(transcript)
             st.write("AI Generated Summary:")
             st.write(summary_response.text)
