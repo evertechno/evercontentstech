@@ -1,151 +1,138 @@
 import streamlit as st
-import pandas as pd
-import math
-from pathlib import Path
+import google.generativeai as genai
+from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip
+import speech_recognition as sr
+import tempfile
+import os
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Configure Google Generative AI API key (make sure the API key is added to the secrets)
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# Streamlit UI setup
+st.title("Cloud-Based Video Editor with AI Features")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# Video Upload
+video_file = st.file_uploader("Upload a Video", type=["mp4", "avi", "mov"])
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+if video_file is not None:
+    # Display the uploaded video
+    st.video(video_file)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    # Load video for editing
+    video_clip = VideoFileClip(video_file)
+    duration = video_clip.duration
+    st.write(f"Video Duration: {duration:.2f} seconds")
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    # **Trim Video**
+    st.subheader("Trim Video")
+    start_time = st.number_input("Start Time (in seconds)", min_value=0, max_value=duration, step=1)
+    end_time = st.number_input("End Time (in seconds)", min_value=start_time, max_value=duration, step=1)
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+    if st.button("Trim Video"):
+        trimmed_clip = video_clip.subclip(start_time, end_time)
+        trimmed_clip.write_videofile("trimmed_video.mp4", codec="libx264")
+        st.video("trimmed_video.mp4")
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    # **Merge Videos**
+    st.subheader("Merge Videos")
+    second_video_file = st.file_uploader("Upload a second video to merge", type=["mp4", "avi", "mov"])
+    if second_video_file is not None:
+        second_clip = VideoFileClip(second_video_file)
+        if st.button("Merge Videos"):
+            final_clip = concatenate_videoclips([video_clip, second_clip])
+            final_clip.write_videofile("merged_video.mp4", codec="libx264")
+            st.video("merged_video.mp4")
 
-    return gdp_df
+    # **Extract Audio from Video**
+    st.subheader("Extract Audio from Video")
+    if st.button("Extract Audio"):
+        audio_clip = video_clip.audio
+        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        audio_clip.write_audiofile(temp_audio.name)
+        st.audio(temp_audio.name)
+        st.write(f"Audio saved as {temp_audio.name}")
 
-gdp_df = get_gdp_data()
+    # **Generate Transcription**
+    def extract_audio_and_transcribe(video_file):
+        video_clip = VideoFileClip(video_file)
+        audio_clip = video_clip.audio
+        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        audio_clip.write_audiofile(temp_audio.name)
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(temp_audio.name) as audio_source:
+            audio_data = recognizer.record(audio_source)
+        transcript = recognizer.recognize_google(audio_data)
+        
+        # Clean up temporary audio file
+        os.remove(temp_audio.name)
+        
+        return transcript
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+    def generate_transcription(video_file):
+        try:
+            transcript = extract_audio_and_transcribe(video_file)
+            st.subheader("Generated Transcription")
+            st.text_area("Transcription", transcript, height=200)
+            # Option to download transcription as a text file
+            with open("transcription.txt", "w") as f:
+                f.write(transcript)
+            st.download_button("Download Transcription", "transcription.txt")
+        except Exception as e:
+            st.error(f"Error generating transcription: {e}")
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+    if st.button("Generate Transcription"):
+        if video_file is not None:
+            generate_transcription(video_file)
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            st.warning("Please upload a video to generate transcription.")
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+    # **Apply Filters and Effects**
+    st.subheader("Apply Filters and Effects")
+    if st.button("Apply Brightness Effect"):
+        # Applying a simple color effect (adjust brightness)
+        from moviepy.editor import vfx
+        video_with_effect = video_clip.fx(vfx.colorx, 1.5)  # Increase brightness
+        video_with_effect.write_videofile("video_with_effect.mp4", codec="libx264")
+        st.video("video_with_effect.mp4")
+
+    # **Add Background Music**
+    st.subheader("Add Background Music to Video")
+    background_music = st.file_uploader("Upload Background Music (MP3)", type=["mp3"])
+    if background_music is not None:
+        audio_clip = AudioFileClip(background_music)
+        if st.button("Add Background Music"):
+            final_video_with_music = video_clip.set_audio(audio_clip)
+            final_video_with_music.write_videofile("video_with_music.mp4", codec="libx264")
+            st.video("video_with_music.mp4")
+
+    # **AI Summarization**
+    st.subheader("AI Generated Summary (using Google Generative AI)")
+    prompt = st.text_input("Enter your prompt:", "Summarize the video content.")
+    if st.button("Generate AI Summary"):
+        try:
+            transcript = extract_audio_and_transcribe(video_file)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            summary_response = model.generate_content(transcript)
+            st.write("AI Generated Summary:")
+            st.write(summary_response.text)
+        except Exception as e:
+            st.error(f"Error generating AI summary: {e}")
+
+    # Clean up temporary files
+    def clean_up_files():
+        files_to_remove = [
+            "trimmed_video.mp4",
+            "merged_video.mp4",
+            "video_with_effect.mp4",
+            "video_with_music.mp4",
+            "transcription.txt"
+        ]
+        for file in files_to_remove:
+            if os.path.exists(file):
+                os.remove(file)
+
+    # Auto-clean files (optional)
+    if st.button("Clean Up Files"):
+        clean_up_files()
+        st.write("Temporary files cleaned up.")
