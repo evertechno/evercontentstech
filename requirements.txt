@@ -4,3 +4,4 @@ moviepy
 google-generativeai 
 SpeechRecognition 
 numpy
+ffmpeg
