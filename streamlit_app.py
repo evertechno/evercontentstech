@@ -25,8 +25,10 @@ if video_file is not None:
     st.subheader("Trim Video")
     video_clip = VideoFileClip(temp_video_path)
     duration = video_clip.duration
-    start_time = st.number_input("Start Time (in seconds)", min_value=0, max_value=duration, step=1)
-    end_time = st.number_input("End Time (in seconds)", min_value=start_time, max_value=duration, step=1)
+
+    # Ensure consistency of types by casting start_time and end_time to float
+    start_time = st.number_input("Start Time (in seconds)", min_value=0.0, max_value=duration, step=0.1)
+    end_time = st.number_input("End Time (in seconds)", min_value=start_time, max_value=duration, step=0.1)
 
     if st.button("Trim Video"):
         ffmpeg_tools.ffmpeg_extract_subclip(temp_video_path, start_time, end_time, targetname="trimmed_video.mp4")
